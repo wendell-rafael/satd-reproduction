@@ -39,6 +39,8 @@ REPOS_DIR = os.path.join(DATA_DIR, "repos")
 PROJECTS = {
     "eclipse": {
         "url": "https://github.com/eclipse-platform/eclipse.platform",
+        # Eclipse is a Java project
+        "extensions": (".java",),
         "releases": [
             ("R3_0", "R3_1"),
             ("R3_1", "R3_2"),
@@ -51,6 +53,8 @@ PROJECTS = {
     },
     "argouml": {
         "url": "https://github.com/argouml-tigris-org/argouml",
+        # ArgoUML is a Java project
+        "extensions": (".java",),
         "releases": [
             ("v0_20", "v0_22"),
             ("v0_22", "v0_24"),
@@ -63,6 +67,8 @@ PROJECTS = {
     },
     "apache": {
         "url": "https://github.com/apache/httpd",
+        # Apache httpd is a C project
+        "extensions": (".c", ".h"),
         "releases": [
             ("2.0.65", "2.2.34"),
             ("2.2.34", "2.4.0"),
@@ -151,7 +157,7 @@ def resolve_tag(repo_path: str, tag_hint: str) -> Optional[str]:
 
 
 def extract_satd_comments_at_tag(
-    repo_path: str, tag: str, extensions: Tuple[str, ...] = (".java", ".c", ".cpp", ".h", ".py")
+    repo_path: str, tag: str, extensions: Tuple[str, ...] = (".java", ".c", ".h")
 ) -> List[Dict]:
     """
     Para um determinado tag/commit, lista todos os comentários de código-fonte
@@ -209,18 +215,20 @@ def extract_satd_comments_at_tag(
     return satd_comments
 
 
-def compute_removal_rate(
+def compute_removal(
     satd_from: List[Dict],
     satd_to: List[Dict],
-) -> float:
+) -> Tuple[int, float]:
     """
-    Calcula a taxa de remoção de SATD entre duas releases.
+    Calcula o número e a taxa de remoção de SATD entre duas releases.
 
     Considera que um comentário SATD foi removido se o texto exato não aparece
     na release seguinte no mesmo arquivo (match por arquivo + texto normalizado).
+
+    Retorna (removed_count, removal_rate_pct).
     """
     if not satd_from:
-        return 0.0
+        return 0, 0.0
 
     # Cria conjunto de (arquivo, texto_normalizado) para a release destino
     to_keys = {
@@ -234,7 +242,8 @@ def compute_removal_rate(
         if (d["file"], d["text"].lower().strip()) not in to_keys
     )
 
-    return round(100 * removed / len(satd_from), 2)
+    rate = round(100 * removed / len(satd_from), 2)
+    return removed, rate
 
 
 def analyze_project(name: str, config: Dict) -> pd.DataFrame:
@@ -244,6 +253,7 @@ def analyze_project(name: str, config: Dict) -> pd.DataFrame:
     satd_to, removed, removal_rate_pct.
     """
     repo_path = clone_or_update_repo(name, config["url"])
+    extensions: Tuple[str, ...] = config.get("extensions", (".java", ".c", ".h"))
 
     rows = []
     cache: Dict[str, List[Dict]] = {}
@@ -251,16 +261,19 @@ def analyze_project(name: str, config: Dict) -> pd.DataFrame:
     for tag_from, tag_to in config["releases"]:
         # Extrai SATD na release inicial (usa cache se já calculado)
         if tag_from not in cache:
-            cache[tag_from] = extract_satd_comments_at_tag(repo_path, tag_from)
+            cache[tag_from] = extract_satd_comments_at_tag(
+                repo_path, tag_from, extensions
+            )
         satd_from = cache[tag_from]
 
         # Extrai SATD na release final
         if tag_to not in cache:
-            cache[tag_to] = extract_satd_comments_at_tag(repo_path, tag_to)
+            cache[tag_to] = extract_satd_comments_at_tag(
+                repo_path, tag_to, extensions
+            )
         satd_to = cache[tag_to]
 
-        removal_rate = compute_removal_rate(satd_from, satd_to)
-        removed = int(len(satd_from) * removal_rate / 100) if satd_from else 0
+        removed, removal_rate = compute_removal(satd_from, satd_to)
 
         rows.append(
             {

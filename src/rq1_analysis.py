@@ -287,8 +287,12 @@ def rq1_pattern_coverage(df: pd.DataFrame) -> pd.DataFrame:
     n_satd = len(satd_df)
 
     rows = []
-    for pattern in SATD_PATTERNS:
-        pat_re = re.compile(r"\b" + re.escape(pattern) + r"\b", re.IGNORECASE)
+    # Pre-compile all patterns for efficiency
+    compiled_patterns = [
+        (pattern, re.compile(r"\b" + re.escape(pattern) + r"\b", re.IGNORECASE))
+        for pattern in SATD_PATTERNS
+    ]
+    for pattern, pat_re in compiled_patterns:
         m_satd = int(satd_df["_text_lower"].str.contains(pat_re).sum())
         m_not = int(not_satd_df["_text_lower"].str.contains(pat_re).sum())
         rows.append(

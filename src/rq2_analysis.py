@@ -180,7 +180,9 @@ def build_project_summary(df: pd.DataFrame) -> pd.DataFrame:
         extra_cols[loc_col] = "project_loc"
 
     if extra_cols:
-        extra_agg = {col: "first" for col in extra_cols}
+        # Use mean for numeric project-level attributes; values should be uniform
+        # per project, but mean handles any minor inconsistencies gracefully.
+        extra_agg = {col: "mean" for col in extra_cols}
         extra = (
             df.groupby(proj_col)
             .agg(extra_agg)
@@ -191,11 +193,11 @@ def build_project_summary(df: pd.DataFrame) -> pd.DataFrame:
     else:
         grouped = base
 
-    grouped["pct_satd"] = grouped.apply(
-        lambda r: round(100 * r["n_satd"] / r["n_comments"], 4)
-        if r["n_comments"] > 0
-        else 0.0,
-        axis=1,
+    # Vectorized computation of SATD percentage
+    grouped["pct_satd"] = (
+        (100 * grouped["n_satd"] / grouped["n_comments"])
+        .fillna(0.0)
+        .round(4)
     )
 
     return grouped
